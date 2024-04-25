@@ -16,14 +16,13 @@ param (
 )
 
 $batchFile = $PS1File -replace ".ps1",".bat"
-$a=$([regex]".*\\(.*)").Matches("$batchFile")
-$batchFilename = $a.groups[1].value
+$batchFilename = $($([regex]".*\\(.*)").Matches("$batchFile")).groups[1].value
 $codeString = @"
-function main1 {
-  $([string]::join([environment]::newline,(Get-Content $PS1File)))
+function main {
+$([string]::join([environment]::newline,(Get-Content $PS1File)))
 }
 
-invoke-expression "main1 `$(Get-Content `$env:TEMP\params.txt)"
+invoke-expression "main `$(Get-Content `$env:TEMP\params.txt)"
 "@
 $encodedCode = [convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes([scriptblock]::Create($codeString)))
 write-host -ForegroundColor Yellow "Encoded command length:  $($encodedCode.length)"
@@ -33,6 +32,7 @@ if ($encodedCode.length -gt 8140) { write-host -ForegroundColor Yellow "Houston,
 @echo off
 goto startCode
 
+### Start comment block ###
 ===========================================================================
 $batchFilename
 $env:Username
@@ -40,10 +40,19 @@ $((get-date).ToString())
 =====start powershell code=================================================
 $codeString
 ===========================================================================
+Use
+  `$encodedText = '<Encoded text after "powershell.exe -NoLogo -NoProfile -EncodedCommand">'
+  [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String(`$encodedText))
+to confirm encoded PowerShell code contents.
+===========================================================================
+### End comment block ###
+
 :startCode
 echo %* > %TEMP%\params.txt
 
 powershell.exe -NoLogo -NoProfile -EncodedCommand $encodedCode
 
+del %TEMP%\params.txt
+"@ | out-file -Encoding ascii $batchFile
 del %TEMP%\params.txt
 "@ | out-file -Encoding ascii $batchFile
