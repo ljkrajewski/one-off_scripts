@@ -4,12 +4,9 @@ embed_image.py
 Usage: embed_image.py <image_file>
 
 Converts a PNG image to a data:image/png URI, then wraps it inside an HTML template.
-
-Requires pillow ($ pip install pillow)
 """
 
 import base64
-from PIL import Image
 import sys
 import os
 
