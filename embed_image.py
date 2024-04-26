@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+"""
+embed_image.py
+Usage: embed_image.py <image_file>
+
+Converts a PNG image to a data:image/png URI, then wraps it inside an HTML template.
+"""
 
 import base64
 from PIL import Image  #pip install pillow
