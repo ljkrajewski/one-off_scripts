@@ -12,7 +12,7 @@ from datetime import datetime
 
 def setup_logging(log_file, verbose):
     """Set up logging to file or stdout with specified verbosity."""
-    logger = logging.getLogger('backup_script')
+    logger = logging.getLogger('backup_dir')
     logger.setLevel(logging.INFO)
     
     # Create formatter
