@@ -88,9 +88,10 @@ def get_dest_files(dest_dir, ignore_patterns, logger, verbose):
 def get_src_files_with_md5(src_dir, backup_type, timestamp_file, ignore_patterns, logger, verbose):
     """Get dictionary of source files with their MD5 checksums, filtered by backup type and ignore patterns."""
     src_files = {}
-    files_skipped = 0
+    files_ignored = 0
+    files_skipped_timestamp = 0
     timestamp_mtime = None
-    if backup_type == "incr" and timestamp_file:
+    if timestamp_file and backup_type == "incr":
         if not os.path.exists(timestamp_file):
             raise FileNotFoundError(f"Timestamp file {timestamp_file} does not exist")
         timestamp_mtime = os.path.getmtime(timestamp_file)
@@ -105,7 +106,7 @@ def get_src_files_with_md5(src_dir, backup_type, timestamp_file, ignore_patterns
             if ignore_patterns and is_ignored(rel_path, ignore_patterns):
                 if verbose:
                     logger.info(f"Skipping ignored file: {rel_path}")
-                files_skipped += 1
+                files_ignored += 1
                 continue
             # Check file modification time for incremental backup
             if backup_type == "incr" and timestamp_mtime:
@@ -113,12 +114,12 @@ def get_src_files_with_md5(src_dir, backup_type, timestamp_file, ignore_patterns
                 if file_mtime <= timestamp_mtime:
                     if verbose:
                         logger.info(f"Skipping file {rel_path} (mtime {file_mtime} <= timestamp mtime {timestamp_mtime})")
-                    files_skipped += 1
+                    files_skipped_timestamp += 1
                     continue
             src_files[rel_path] = calculate_md5(file_path)
     if verbose:
-        logger.info(f"Found {len(src_files)} files in source directory for backup, skipped {files_skipped} files")
-    return src_files, files_skipped
+        logger.info(f"Found {len(src_files)} files in source directory for backup, ignored {files_ignored} files, skipped {files_skipped_timestamp} files due to timestamp")
+    return src_files, files_ignored + (files_skipped_timestamp if backup_type == "incr" else 0)
 
 def copy_file_with_metadata(src_path, dest_path, logger, verbose):
     """Copy file preserving metadata and verify with MD5."""
