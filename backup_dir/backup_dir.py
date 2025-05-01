@@ -250,7 +250,7 @@ def backup_directory(src_dir, dest_dir, backup_type, timestamp_file, logger, ver
     
     end_time = time.time()
     duration = end_time - start_time
-    logger.info(f"Backup completed successfully: {files_copied} files copied, {files_skipped} files skipped, {files_deleted} files deleted in {duration:.2f} seconds")
+    logger.info(f"Backup completed successfully: {files_copied} files copied, {files_skipped} files skipped, {files_deleted} files deleted from {src} during backup in {duration:.2f} seconds")
 
 def main():
     parser = argparse.ArgumentParser(description="Backup directory with MD5 verification")
