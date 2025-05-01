@@ -1,2 +1,2 @@
-# powershell_one-offs
-Small collection of powershell scripts
+# one-off scripts
+Small collection of powershell, python, bash, and cmd scripts, plus a jupyter/colab notebook.
