@@ -12,7 +12,7 @@ from datetime import datetime
 
 def setup_logging(log_file, verbose):
     """Set up logging to file or stdout with specified verbosity."""
-    logger = logging.getLogger('backup_dir')
+    logger = logging.getLogger('backup_script')
     logger.setLevel(logging.INFO)
     
     # Create formatter
@@ -88,6 +88,7 @@ def get_dest_files(dest_dir, ignore_patterns, logger, verbose):
 def get_src_files_with_md5(src_dir, backup_type, timestamp_file, ignore_patterns, logger, verbose):
     """Get dictionary of source files with their MD5 checksums, filtered by backup type and ignore patterns."""
     src_files = {}
+    files_skipped = 0
     timestamp_mtime = None
     if backup_type == "incr" and timestamp_file:
         if not os.path.exists(timestamp_file):
@@ -104,6 +105,7 @@ def get_src_files_with_md5(src_dir, backup_type, timestamp_file, ignore_patterns
             if ignore_patterns and is_ignored(rel_path, ignore_patterns):
                 if verbose:
                     logger.info(f"Skipping ignored file: {rel_path}")
+                files_skipped += 1
                 continue
             # Check file modification time for incremental backup
             if backup_type == "incr" and timestamp_mtime:
@@ -111,11 +113,12 @@ def get_src_files_with_md5(src_dir, backup_type, timestamp_file, ignore_patterns
                 if file_mtime <= timestamp_mtime:
                     if verbose:
                         logger.info(f"Skipping file {rel_path} (mtime {file_mtime} <= timestamp mtime {timestamp_mtime})")
+                    files_skipped += 1
                     continue
             src_files[rel_path] = calculate_md5(file_path)
     if verbose:
-        logger.info(f"Found {len(src_files)} files in source directory for backup")
-    return src_files
+        logger.info(f"Found {len(src_files)} files in source directory for backup, skipped {files_skipped} files")
+    return src_files, files_skipped
 
 def copy_file_with_metadata(src_path, dest_path, logger, verbose):
     """Copy file preserving metadata and verify with MD5."""
@@ -154,11 +157,18 @@ def copy_file_with_metadata(src_path, dest_path, logger, verbose):
             logger.info(f"Set ownership for {dest_path} (uid: {src_stat.st_uid}, gid: {src_stat.st_gid})")
     except PermissionError as e:
         logger.warning(f"Could not set ownership for {dest_path}: {e}")
+    
+    return 1  # Return 1 to indicate one file was copied
 
 def backup_directory(src_dir, dest_dir, backup_type, timestamp_file, logger, verbose):
     """Perform backup from src_dir to dest_dir based on backup type."""
     start_time = time.time()
     logger.info(f"Starting {backup_type} backup from {src_dir} to {dest_dir}")
+    
+    # Initialize counters
+    files_copied = 0
+    files_skipped = 0
+    files_deleted = 0
     
     # Ensure directories exist
     src_dir = Path(src_dir).resolve()
@@ -177,7 +187,8 @@ def backup_directory(src_dir, dest_dir, backup_type, timestamp_file, logger, ver
     
     # Get files lists
     dest_files = get_dest_files(dest_dir, ignore_patterns, logger, verbose) if backup_type == "full" else []
-    src_files = get_src_files_with_md5(src_dir, backup_type, timestamp_file, ignore_patterns, logger, verbose)
+    src_files, skipped_from_filters = get_src_files_with_md5(src_dir, backup_type, timestamp_file, ignore_patterns, logger, verbose)
+    files_skipped += skipped_from_filters
     
     # Process each source file
     for rel_path, src_md5 in src_files.items():
@@ -193,13 +204,14 @@ def backup_directory(src_dir, dest_dir, backup_type, timestamp_file, logger, ver
                 dest_md5 = calculate_md5(dest_path)
                 if src_md5 == dest_md5:
                     copy_needed = False
+                    files_skipped += 1
                     if verbose:
                         logger.info(f"Skipping {rel_path}: MD5 matches")
         
         # Copy file if needed
         if copy_needed:
             try:
-                copy_file_with_metadata(src_path, dest_path, logger, verbose)
+                files_copied += copy_file_with_metadata(src_path, dest_path, logger, verbose)
             except Exception as e:
                 logger.error(f"Error copying {rel_path}: {e}")
                 raise
@@ -210,6 +222,7 @@ def backup_directory(src_dir, dest_dir, backup_type, timestamp_file, logger, ver
             dest_path = dest_dir / rel_path
             try:
                 os.remove(dest_path)
+                files_deleted += 1
                 logger.info(f"Deleted {rel_path}")
                 # Clean up empty directories
                 parent = dest_path.parent
@@ -236,7 +249,7 @@ def backup_directory(src_dir, dest_dir, backup_type, timestamp_file, logger, ver
     
     end_time = time.time()
     duration = end_time - start_time
-    logger.info(f"Backup completed successfully in {duration:.2f} seconds")
+    logger.info(f"Backup completed successfully: {files_copied} files copied, {files_skipped} files skipped, {files_deleted} files deleted in {duration:.2f} seconds")
 
 def main():
     parser = argparse.ArgumentParser(description="Backup directory with MD5 verification")
