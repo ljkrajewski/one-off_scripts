@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import os
 import shutil
 import hashlib
@@ -64,13 +66,20 @@ def is_ignored(rel_path, ignore_patterns):
                 return True
     return False
 
-def calculate_md5(file_path):
-    """Calculate MD5 checksum of a file."""
-    md5_hash = hashlib.md5()
-    with open(file_path, "rb") as f:
-        for chunk in iter(lambda: f.read(4096), b""):
-            md5_hash.update(chunk)
-    return md5_hash.hexdigest()
+def calculate_md5(file_path, logger):
+    """Calculate MD5 checksum of a file, skipping symbolic links."""
+    if os.path.islink(file_path):
+        logger.debug(f"Skipping MD5 calculation for symbolic link: {file_path}")
+        return None
+    try:
+        md5_hash = hashlib.md5()
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                md5_hash.update(chunk)
+        return md5_hash.hexdigest()
+    except OSError as e:
+        logger.error(f"Failed to calculate MD5 for {file_path}: {e}")
+        raise
 
 def get_dest_files(dest_dir, ignore_patterns, logger, verbose):
     """Get list of all files in destination directory, excluding ignored files."""
@@ -109,20 +118,57 @@ def get_src_files_with_md5(src_dir, backup_type, timestamp_file, ignore_patterns
                 files_ignored += 1
                 continue
             # Check file modification time for incremental backup
-            if backup_type == "incr" and timestamp_mtime:
+            if backup_type == "incr" and timestamp_mtime and not os.path.islink(file_path):
                 file_mtime = os.path.getmtime(file_path)
                 if file_mtime <= timestamp_mtime:
                     if verbose:
                         logger.info(f"Skipping file {rel_path} (mtime {file_mtime} <= timestamp mtime {timestamp_mtime})")
                     files_skipped_timestamp += 1
                     continue
-            src_files[rel_path] = calculate_md5(file_path)
+            # For symbolic links, use None as MD5 to indicate special handling
+            src_files[rel_path] = calculate_md5(file_path, logger) if not os.path.islink(file_path) else None
     if verbose:
         logger.info(f"Found {len(src_files)} files in source directory for backup, ignored {files_ignored} files, skipped {files_skipped_timestamp} files due to timestamp")
     return src_files, files_ignored + (files_skipped_timestamp if backup_type == "incr" else 0)
 
 def copy_file_with_metadata(src_path, dest_path, logger, verbose):
-    """Copy file preserving metadata and verify with MD5."""
+    """Copy file or symbolic link preserving metadata and verify with MD5 for regular files."""
+    # Handle symbolic links
+    if os.path.islink(src_path):
+        target = os.readlink(src_path)
+        is_broken = not os.path.exists(src_path)
+        if is_broken:
+            logger.warning(f"Copying broken symbolic link {src_path} pointing to {target}")
+        else:
+            if verbose:
+                logger.info(f"Copying symbolic link {src_path} pointing to {target}")
+        
+        # Create parent directory if needed
+        dest_dir = os.path.dirname(dest_path)
+        if dest_dir and not os.path.exists(dest_dir):
+            try:
+                os.makedirs(dest_dir)
+                if verbose:
+                    logger.info(f"Created directory: {dest_dir}")
+            except OSError as e:
+                logger.error(f"Failed to create directory {dest_dir}: {e}")
+                raise
+        
+        # Remove existing file or link at destination if it exists
+        if os.path.exists(dest_path) or os.path.islink(dest_path):
+            os.remove(dest_path)
+        
+        # Create symbolic link
+        try:
+            os.symlink(target, dest_path)
+            if verbose and not is_broken:
+                logger.info(f"Successfully created symbolic link {dest_path} pointing to {target}")
+            return 1  # Count as one file copied
+        except OSError as e:
+            logger.error(f"Failed to create symbolic link {dest_path} pointing to {target}: {e}")
+            raise
+    
+    # Handle regular files
     # Create parent directory if needed
     dest_dir = os.path.dirname(dest_path)
     if dest_dir and not os.path.exists(dest_dir):
@@ -144,8 +190,8 @@ def copy_file_with_metadata(src_path, dest_path, logger, verbose):
         raise
     
     # Verify MD5
-    src_md5 = calculate_md5(src_path)
-    dest_md5 = calculate_md5(dest_path)
+    src_md5 = calculate_md5(src_path, logger)
+    dest_md5 = calculate_md5(dest_path, logger)
     if src_md5 != dest_md5:
         logger.error(f"Verification failed for {dest_path}: MD5 mismatch")
         raise RuntimeError(f"Verification failed for {dest_path}")
@@ -200,16 +246,25 @@ def backup_directory(src_dir, dest_dir, backup_type, timestamp_file, logger, ver
         copy_needed = True
         if rel_path in dest_files:
             dest_files.remove(rel_path)
-            # Compare MD5 checksums
-            if os.path.exists(dest_path):
-                dest_md5 = calculate_md5(dest_path)
+            # Compare MD5 checksums for regular files
+            if os.path.exists(dest_path) and not os.path.islink(src_path):
+                dest_md5 = calculate_md5(dest_path, logger)
                 if src_md5 == dest_md5:
                     copy_needed = False
                     files_skipped += 1
                     if verbose:
                         logger.info(f"Skipping {rel_path}: MD5 matches")
+            # For symbolic links, always copy to ensure the link target is updated
+            elif os.path.islink(src_path) and os.path.islink(dest_path):
+                src_target = os.readlink(src_path)
+                dest_target = os.readlink(dest_path)
+                if src_target == dest_target:
+                    copy_needed = False
+                    files_skipped += 1
+                    if verbose:
+                        logger.info(f"Skipping symbolic link {rel_path}: target matches")
         
-        # Copy file if needed
+        # Copy file or link if needed
         if copy_needed:
             try:
                 files_copied += copy_file_with_metadata(src_path, dest_path, logger, verbose)
@@ -238,19 +293,19 @@ def backup_directory(src_dir, dest_dir, backup_type, timestamp_file, logger, ver
             except OSError as e:
                 logger.warning(f"Could not delete {rel_path}: {e}")
     
-    # Update timestamp file timestamp
+    # Update timestamp file timestamp to backup start time
     if timestamp_file:
         try:
             with open(timestamp_file, "a"):
-                os.utime(timestamp_file, None)  # Update to current time
+                os.utime(timestamp_file, (start_time, start_time))  # Set to backup start time
             if verbose:
-                logger.info(f"Updated timestamp file {timestamp_file}")
+                logger.info(f"Updated timestamp file {timestamp_file} to backup start time {start_time}")
         except OSError as e:
             logger.warning(f"Could not update timestamp file {timestamp_file}: {e}")
     
     end_time = time.time()
     duration = end_time - start_time
-    logger.info(f"Backup completed successfully: {files_copied} files copied, {files_skipped} files skipped, {files_deleted} files deleted from {src} during backup in {duration:.2f} seconds")
+    logger.info(f"Backup completed successfully: {files_copied} files copied, {files_skipped} files skipped, {files_deleted} files deleted in {duration:.2f} seconds")
 
 def main():
     parser = argparse.ArgumentParser(description="Backup directory with MD5 verification")
