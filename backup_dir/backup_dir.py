@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import os
 import shutil
 import hashlib
@@ -88,7 +90,7 @@ def get_dest_files(dest_dir, ignore_patterns, logger, verbose):
             file_path = os.path.join(root, file)
             rel_path = os.path.relpath(file_path, dest_dir)
             file_count += 1
-            if verbose and file_count % 250 == 0:
+            if verbose and file_count % 1000 == 0:
                 logger.info(f"Processed {file_count} files for destination directory list")
             if not is_ignored(rel_path, ignore_patterns):
                 dest_files.append(rel_path)
@@ -115,7 +117,7 @@ def get_src_files_with_md5(src_dir, backup_type, timestamp_file, ignore_patterns
             file_path = os.path.join(root, file)
             rel_path = os.path.relpath(file_path, src_dir)
             file_count += 1
-            if verbose and file_count % 250 == 0:
+            if verbose and file_count % 1000 == 0:
                 logger.info(f"Processed {file_count} files for source directory dictionary")
             # Skip ignored files
             if ignore_patterns and is_ignored(rel_path, ignore_patterns):
