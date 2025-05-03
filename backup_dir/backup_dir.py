@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import os
 import shutil
 import hashlib
@@ -84,14 +82,18 @@ def calculate_md5(file_path, logger):
 def get_dest_files(dest_dir, ignore_patterns, logger, verbose):
     """Get list of all files in destination directory, excluding ignored files."""
     dest_files = []
+    file_count = 0
     for root, _, files in os.walk(dest_dir):
         for file in files:
             file_path = os.path.join(root, file)
             rel_path = os.path.relpath(file_path, dest_dir)
+            file_count += 1
+            if verbose and file_count % 250 == 0:
+                logger.info(f"Processed {file_count} files for destination directory list")
             if not is_ignored(rel_path, ignore_patterns):
                 dest_files.append(rel_path)
     if verbose:
-        logger.info(f"Found {len(dest_files)} files in destination directory")
+        logger.info(f"Completed scanning destination directory: {file_count} files processed, {len(dest_files)} included")
     return dest_files
 
 def get_src_files_with_md5(src_dir, backup_type, timestamp_file, ignore_patterns, logger, verbose):
@@ -99,6 +101,7 @@ def get_src_files_with_md5(src_dir, backup_type, timestamp_file, ignore_patterns
     src_files = {}
     files_ignored = 0
     files_skipped_timestamp = 0
+    file_count = 0
     timestamp_mtime = None
     if timestamp_file and backup_type == "incr":
         if not os.path.exists(timestamp_file):
@@ -111,6 +114,9 @@ def get_src_files_with_md5(src_dir, backup_type, timestamp_file, ignore_patterns
         for file in files:
             file_path = os.path.join(root, file)
             rel_path = os.path.relpath(file_path, src_dir)
+            file_count += 1
+            if verbose and file_count % 250 == 0:
+                logger.info(f"Processed {file_count} files for source directory dictionary")
             # Skip ignored files
             if ignore_patterns and is_ignored(rel_path, ignore_patterns):
                 if verbose:
@@ -128,7 +134,7 @@ def get_src_files_with_md5(src_dir, backup_type, timestamp_file, ignore_patterns
             # For symbolic links, use None as MD5 to indicate special handling
             src_files[rel_path] = calculate_md5(file_path, logger) if not os.path.islink(file_path) else None
     if verbose:
-        logger.info(f"Found {len(src_files)} files in source directory for backup, ignored {files_ignored} files, skipped {files_skipped_timestamp} files due to timestamp")
+        logger.info(f"Completed scanning source directory: {file_count} files processed, {len(src_files)} included, ignored {files_ignored} files, skipped {files_skipped_timestamp} files due to timestamp")
     return src_files, files_ignored + (files_skipped_timestamp if backup_type == "incr" else 0)
 
 def copy_file_with_metadata(src_path, dest_path, logger, verbose):
