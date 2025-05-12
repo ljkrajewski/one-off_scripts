@@ -24,6 +24,6 @@ if [ ! -d $2 ]; then
   exit 1
 fi
 
-rsync -avrR --stats --checksum --checksum-choice=md5 --log-file=$LOGFILE $SRC $DEST
+rsync -avrR --stats --delete --checksum --checksum-choice=md5 --log-file=$LOGFILE $SRC $DEST
 
 gzip -9 $LOGFILE
