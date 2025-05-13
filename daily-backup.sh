@@ -3,7 +3,7 @@
 
 SRC=$1
 DEST=$2
-LOGFILE=~/var/log/backup/$(basename $SRC)-`date +"%Y%m%d%H%M"`.log
+LOGFILE=/var/log/backup/$(basename $SRC)-`date +"%Y%m%d%H%M"`.log
 
 echo SRC = $SRC
 echo DEST = $DEST
